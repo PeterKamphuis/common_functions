@@ -2,7 +2,12 @@
 
 import numpy as np
 import copy
+import os
+import re
 import warnings
+from astropy.wcs import WCS
+
+from astropy.io import fits
 from scipy.ndimage import rotate
 from scipy.optimize import curve_fit, OptimizeWarning
 
@@ -218,6 +223,74 @@ convertskyangle.__doc__ =f'''
 '''
 
 
+def cutout_cube(filename,sub_cube, outname=None):
+
+    if outname == None:
+        outname = f'{os.path.splitext(filename)[0]}_cut.fits'
+
+    Cube = fits.open(filename,uint = False, do_not_scale_image_data=True,ignore_blank = True, output_verify= 'ignore')
+    hdr = Cube[0].header
+
+    if hdr['NAXIS'] == 3:
+        print(sub_cube[0,0],sub_cube[0,1],sub_cube[1,0],sub_cube[1,1],sub_cube[2,0],sub_cube[2,1])
+        data = Cube[0].data[sub_cube[0,0]:sub_cube[0,1],sub_cube[1,0]:sub_cube[1,1],sub_cube[2,0]:sub_cube[2,1]]
+        hdr['NAXIS1'] = sub_cube[2,1]-sub_cube[2,0]
+        hdr['NAXIS2'] = sub_cube[1,1]-sub_cube[1,0]
+        hdr['NAXIS3'] = sub_cube[0,1]-sub_cube[0,0]
+        hdr['CRPIX1'] = hdr['CRPIX1'] -sub_cube[2,0]
+        hdr['CRPIX2'] = hdr['CRPIX2'] -sub_cube[1,0]
+        hdr['CRPIX3'] = hdr['CRPIX3'] -sub_cube[0,0]
+        #Only update when cutting the cube
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            coordinate_frame = WCS(hdr)
+            xlow,ylow,zlow = coordinate_frame.wcs_pix2world(1,1,1., 1.)
+            xhigh,yhigh,zhigh = coordinate_frame.wcs_pix2world(hdr['NAXIS1'],hdr['NAXIS2'],hdr['NAXIS3'], 1.)
+            xlim = np.sort([xlow,xhigh])
+            ylim = np.sort([ylow,yhigh])
+            zlim =np.sort([zlow,zhigh])/1000.
+
+    elif hdr['NAXIS'] == 2:
+        data = Cube[0].data[sub_cube[1,0]:sub_cube[1,1],sub_cube[2,0]:sub_cube[2,1]]
+        hdr['NAXIS1'] = sub_cube[2,1]-sub_cube[2,0]
+        hdr['NAXIS2'] = sub_cube[1,1]-sub_cube[1,0]
+        hdr['CRPIX1'] = hdr['CRPIX1'] -sub_cube[2,0]
+        hdr['CRPIX2'] = hdr['CRPIX2'] -sub_cube[1,0]
+
+    Cube.close()
+    fits.writeto(outname,data,hdr,overwrite = True)
+    return outname
+
+cutout_cube.__doc__ =f'''
+ NAME:
+    cutout_cube
+
+ PURPOSE:
+    Cut filename back to the size of subcube, update the header and write back to disk.
+
+ CATEGORY:
+    fits_functions
+
+ INPUTS:
+    filename = name of the cube to be cut
+    outname = name of the output file
+    sub_cube = array that contains the new size as
+                [[z_min,z_max],[y_min,y_max], [x_min,x_max]]
+                adhering to fits' idiotic way of reading fits files.
+
+ OPTIONAL INPUTS:
+
+ OUTPUTS:
+    the cut cube is written to disk.
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE:
+'''
 
 def fit_gaussian(x,y, covariance = False,errors = None, \
     verbose= False):
@@ -256,7 +329,7 @@ def fit_gaussian(x,y, covariance = False,errors = None, \
                 gauss_parameters, gauss_covariance = curve_fit(gaussian_function, \
                         x, y,p0=[est_peak,est_center,est_sigma],sigma= errors,\
                         absolute_sigma= absolute_sigma,maxfev=maxfev)
-            
+
                 succes = True
             except OptimizeWarning:
                 maxfev =  2000*(len(x))
@@ -469,6 +542,46 @@ rotateCube.__doc__=f'''
  NOTE:
 '''
 
+def regrid_array(oldarray, Out_Shape):
+    oldshape = np.array(oldarray.shape)
+    newshape = np.array(Out_Shape, dtype=float)
+    ratios = oldshape/newshape
+        # calculate new dims
+    nslices = [ slice(0,j) for j in list(newshape) ]
+    #make a list with new coord
+    new_coordinates = np.mgrid[nslices]
+    #scale the new coordinates
+    for i in range(len(ratios)):
+        new_coordinates[i] *= ratios[i]
+    #create our regridded array
+    newarray = map_coordinates(oldarray, new_coordinates,order=1)
+    if any([x != y for x,y in zip(newarray.shape,newshape)]):
+        print("Something went wrong when regridding.")
+    return newarray
+regrid_array.__doc__ =f'''
+ NAME:
+    regridder
+ PURPOSE:
+    Regrid an array into a new shape through the ndimage module
+ CATEGORY:
+    fits_functions
+
+ INPUTS:
+    oldarray = the larger array
+    newshape = the new shape that is requested
+
+ OPTIONAL INPUTS:
+
+ OUTPUTS:
+    newarray = regridded array
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    scipy.ndimage.map_coordinates, np.array, np.mgrid
+
+ NOTE:
+'''
 def update_disk_angles(Tirific_Template, verbose = False):
     extension = ['','_2']
     for ext in extension:
