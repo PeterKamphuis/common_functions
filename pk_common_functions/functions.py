@@ -252,11 +252,20 @@ def cutout_cube(filename,sub_cube, outname=None):
             zlim =np.sort([zlow,zhigh])/1000.
 
     elif hdr['NAXIS'] == 2:
-        data = Cube[0].data[sub_cube[1,0]:sub_cube[1,1],sub_cube[2,0]:sub_cube[2,1]]
-        hdr['NAXIS1'] = sub_cube[2,1]-sub_cube[2,0]
-        hdr['NAXIS2'] = sub_cube[1,1]-sub_cube[1,0]
-        hdr['CRPIX1'] = hdr['CRPIX1'] -sub_cube[2,0]
-        hdr['CRPIX2'] = hdr['CRPIX2'] -sub_cube[1,0]
+
+        if len(sub_cube) == 3:
+            sub_im = sub_cube[1:]
+        elif len(sub_cube) == 2:
+            sub_im = sub_cube
+        else:
+            print(f"We don't understand your idea your sub_cube = {len(sub_cube)} and the image {hdr['NAXIS']}")
+        print(sub_im)
+        data = Cube[0].data[sub_im[0,0]:sub_im[0,1],sub_im[1,0]:sub_im[1,1]]
+
+        hdr['NAXIS1'] = sub_cube[1,1]-sub_cube[1,0]
+        hdr['NAXIS2'] = sub_cube[0,1]-sub_cube[0,0]
+        hdr['CRPIX1'] = hdr['CRPIX1'] -sub_im[1,0]
+        hdr['CRPIX2'] = hdr['CRPIX2'] -sub_im[0,0]
 
     Cube.close()
     fits.writeto(outname,data,hdr,overwrite = True)
@@ -490,6 +499,11 @@ load_tirific.__doc__ =f'''
  NOTE:
     This function has the added option of a dictionary compared to pyFAT
 '''
+def pixels_in_beam(hdr):
+    beamarea=(np.pi*abs(hdr['BMAJ']*hdr['BMIN']))/(4.*np.log(2.))
+    beam_in_pixels = beamarea/(abs(hdr['CDELT1'])*abs(hdr['CDELT2']))
+    return beam_in_pixels
+
 def reduce_header_axes(hdr,axes= 3):
     ax = ['CDELT','CTYPE','CUNIT','CRPIX','CRVAL','NAXIS']
     while hdr['NAXIS'] > axes:
