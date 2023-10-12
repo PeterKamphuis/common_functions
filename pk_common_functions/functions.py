@@ -115,6 +115,118 @@ convertRADEC.__doc__ =f'''
  NOTE:
 '''
 
+def columndensity(levels,systemic = 100.,beam=None,\
+        channel_width=None,column= False,arcsquare=False,solar_mass_input =False\
+        ,solar_mass_output=False, verbose= False):
+    if beam is None:
+        if not arcsquare:
+            print(f'COLUMNDENSITY: A beam is required to make the proper calculation''')
+
+    if channel_width == None:
+        if arcsquare:
+            channel_width = 1.
+        else:
+            print(f'COLUMNDENSITY: A channel width is required to make the proper calculation''')
+    if verbose:
+        print(f'''COLUMNDENSITY: Starting conversion from the following input.
+{'':8s}Levels = {levels}
+{'':8s}Beam = {beam}
+{'':8s}channel_width = {channel_width}
+''')
+    beam=np.array(beam,dtype=float)
+    f0 = 1.420405751786E9 #Hz rest freq
+    c = 299792.458 # light speed in km / s
+    pc = 3.086e+18 #parsec in cm
+    solarmass = 1.98855e30 #Solar mass in kg
+    mHI = 1.6737236e-27 #neutral hydrogen mass in kg
+    if verbose:
+        print(f'''COLUMNDENSITY: We have the following input for calculating the columns.
+{'':8s}COLUMNDENSITY: level = {levels}, channel_width = {channel_width}, beam = {beam}, systemic = {systemic})
+''')
+
+    f = f0 * (1 - (systemic / c)) #Systemic frequency
+    if arcsquare:
+        #Should we have the (f0/f)**2 factor here????
+        HIconv = 605.7383 * 1.823E18 * (2. *np.pi / (np.log(256.)))
+        if column:
+            # If the input is in solarmass we want to convert back to column densities
+            if solar_mass_input:
+                levels=np.array([x*solarmass/(mHI*pc**2) for x in levels],dtype=float)
+            #levels=levels/(HIconv*channel_width)
+
+            levels = levels/(HIconv*channel_width)
+        else:
+
+            levels = HIconv*levels*channel_width
+            if solar_mass_output:
+                levels=levels*mHI/solarmass*pc*pc
+    else:
+        if beam.size <2:
+            beam= [beam,beam]
+        b=beam[0]*beam[1]
+        if column:
+            if solar_mass_input:
+                levels=levels*solarmass/(mHI*pc**2)
+            TK = levels/(1.823e18*channel_width)
+            levels = TK/(((605.7383)/(b))*(f0/f)**2)
+        else:
+            TK=((605.7383)/(b))*(f0/f)**2*levels
+            levels = TK*(1.823e18*channel_width)
+    if not column and solar_mass_input:
+        levels = levels*mHI*pc**2/solarmass
+    return levels
+
+columndensity.__doc__ =f'''
+ NAME:
+    columndensity
+
+ PURPOSE:
+    Convert the various surface brightnesses to other units
+
+ CATEGORY:
+    support_functions
+
+ INPUTS:
+    Configuration = Standard FAT configuration
+    levels = the values to convert
+
+ OPTIONAL INPUTS:
+
+
+    systemic = 100.
+    the systemic velocity of the source
+
+    beam  = [-1.,-1.]
+    the FWHM of the beam in arcsec, if unset taken from Configuration
+
+    channelwidth = -1. width of a channel in km/s
+    channelwidth of the observation if unset taken from Configuration
+
+    column = false
+    if True input is columndensities else in mJy
+
+    arcsquare=False
+    If true then  input is assumed to be in Jy/arcsec^2.
+    If the input is in Jy/arcsec^2*km/s then channelwidth must be 1.
+    This is assumed when channelwidth is left unset
+
+    solar_mass_input =False
+    If true input is assumed to be in M_solar/pc^2
+
+    solar_mass_output=False
+    If true output is provided in M_solar/pc^2
+
+ OUTPUTS:
+    The converted values
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE: Cosmological column densities are taken from Meyer et al 2017
+'''
+
 # function for converting kpc to arcsec and vice versa
 def convertskyangle(angle, distance=-1., unit='arcsec', \
         distance_unit='Mpc', physical=False, verbose=False):
@@ -404,6 +516,42 @@ fit_gaussian.__doc__ =f'''
 def gaussian_function(axis,peak,center,sigma):
     return peak*np.exp(-(axis-center)**2/(2*sigma**2))
 
+def isiterable(variable):
+    '''Check whether variable is iterable'''
+    #First check it is not a string as those are iterable
+    if isinstance(variable,str):
+        return False
+    try:
+        iter(variable)
+    except TypeError:
+        return False
+
+    return True
+isiterable.__doc__ =f'''
+ NAME:
+    isiterable
+
+ PURPOSE:
+    Check whether variable is iterable
+
+ CATEGORY:
+    support_functions
+
+ INPUTS:
+    variable = variable to check
+
+ OPTIONAL INPUTS:
+
+ OUTPUTS:
+    True if iterable False if not
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE:
+'''
 
 
 def load_tirific(def_input,Variables = None,array = False,\
@@ -423,6 +571,7 @@ def load_tirific(def_input,Variables = None,array = False,\
 
     out = []
     for key in Variables:
+
         try:
             out.append([float(x) for x  in def_input[key].split()])
         except KeyError:
