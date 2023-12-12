@@ -5,17 +5,67 @@ import copy
 import os
 import re
 import warnings
+import traceback
 from astropy.wcs import WCS
+from collections import OrderedDict #used in Proper_Dictionary
 
 from astropy.io import fits
-from scipy.ndimage import rotate
+from scipy.ndimage import rotate, map_coordinates
 from scipy.optimize import curve_fit, OptimizeWarning
-
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    import matplotlib
+    matplotlib.use('pdf')
+    import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
+    from matplotlib.patches import Ellipse
 
 class InputError(Exception):
     pass
 class FittingError(Exception):
     pass
+# A class of ordered dictionary where keys can be inserted in at specified locations or at the end.
+class Proper_Dictionary(OrderedDict):
+    def __setitem__(self, key, value):
+        if key not in self:
+            # If it is a new item we only allow it if it is not Configuration or Original_Cube or if we are in setup_configuration
+            try:
+                function,variable,empty = traceback.format_stack()[-2].split('\n')
+            except ValueError: 
+                function,variable = traceback.format_stack()[-2].split('\n')
+            function = function.split()[-1].strip()
+            variable = variable.split('[')[0].strip()
+            if variable == 'Original_Configuration' or variable == 'Configuration':
+                if function != 'setup_configuration':
+                    raise ProgramError("FAT does not allow additional values to the Configuration outside the setup_configuration in support_functions.")
+        OrderedDict.__setitem__(self,key, value)
+    #    "what habbens now")
+    def insert(self, existing_key, new_key, key_value):
+        done = False
+        if new_key in self:
+            self[new_key] = key_value
+            done = True
+        else:
+            new_orderded_dict = self.__class__()
+            for key, value in self.items():
+                new_orderded_dict[key] = value
+                if key == existing_key:
+                    new_orderded_dict[new_key] = key_value
+                    done = True
+            if not done:
+                new_orderded_dict[new_key] = key_value
+                done = True
+                print(
+                    f"----!!!!!!!! YOUR {new_key} was appended at the end as you provided the non-existing {existing_key} to add it after!!!!!!---------")
+            self.clear()
+            self.update(new_orderded_dict)
+
+        if not done:
+            print("----!!!!!!!!We were unable to add your key!!!!!!---------")
+
+Proper_Dictionary.__doc__=f'''
+A class of ordered dictionary where keys can be inserted in at specified locations or at the end.
+'''
 
 
         # a Function to convert the RA and DEC into hour angle (invert = False) and vice versa (default)
@@ -558,7 +608,7 @@ def load_tirific(def_input,Variables = None,array = False,\
         ensure_rings = False ,dict=False):
     #Cause python is the dumbest and mutable objects in the FAT_defaults
     # such as lists transfer
-    if Variables is None:
+    if Variables == None:
         Variables = ['BMIN','BMAJ','BPA','RMS','DISTANCE','NUR','RADI',\
                      'VROT','Z0', 'SBR', 'INCL','PA','XPOS','YPOS','VSYS',\
                      'SDIS','VROT_2',  'Z0_2','SBR_2','INCL_2','PA_2','XPOS_2',\
@@ -796,7 +846,7 @@ def tirific_template(filename = ''):
     else:
         with open(filename, 'r') as tmp:
             template = tmp.readlines()
-    result = {}
+    result = Proper_Dictionary()
     counter = 0
     # Separate the keyword names
     for line in template:
@@ -837,3 +887,53 @@ tirific_template.__doc__ ='''
 
  NOTE:
 '''
+
+def write_tirific(Tirific_Template, name = 'tirific.def',\
+                full_name = False  ):
+    #IF we're writing we bump up the restart_ID and adjust the AZ1P angles to the current warping
+    if int(Tirific_Template['NUR']) == 2:
+        update_disk_angles(Tirific_Template )
+    if 'RESTARTID' in Tirific_Template:
+        Tirific_Template['RESTARTID'] = str(int(Tirific_Template['RESTARTID'])+1)
+   
+    if full_name:
+        file_name = name
+    else:
+        current_dir = os.getcwd()
+        file_name = f'{current_dir}/{name}'
+    with open(file_name, 'w') as file:
+        for key in Tirific_Template:
+            if key[0:5] == 'EMPTY':
+                file.write('\n')
+            else:
+                file.write((f"{key}= {Tirific_Template[key]} \n"))
+write_tirific.__doc__ =f'''
+ NAME:
+    tirific
+
+ PURPOSE:
+    Write a tirific template to file
+
+ CATEGORY:
+    write_functions
+
+ INPUTS:
+    Configuration = Standard FAT configuration
+    Tirific_Template = Standard FAT Tirific Template
+
+ OPTIONAL INPUTS:
+
+
+    name = 'tirific.def'
+    name of the file to write to
+
+ OUTPUTS:
+    Tirific def file
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE:
+ '''
