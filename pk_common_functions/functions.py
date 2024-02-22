@@ -167,7 +167,7 @@ convertRADEC.__doc__ =f'''
 
 def columndensity(levels,systemic = 100.,beam=None,\
         channel_width=None,column= False,arcsquare=False,solar_mass_input =False\
-        ,solar_mass_output=False, verbose= False):
+        ,solar_mass_output=False, verbose= False, linewidth= None):
     if beam is None:
         if not arcsquare:
             print(f'COLUMNDENSITY: A beam is required to make the proper calculation''')
@@ -177,6 +177,8 @@ def columndensity(levels,systemic = 100.,beam=None,\
             channel_width = 1.
         else:
             print(f'COLUMNDENSITY: A channel width is required to make the proper calculation''')
+    if linewidth != None:
+        channel_width = linewidth/(np.sqrt(linewidth/channel_width))
     if verbose:
         print(f'''COLUMNDENSITY: Starting conversion from the following input.
 {'':8s}Levels = {levels}
@@ -276,6 +278,55 @@ columndensity.__doc__ =f'''
 
  NOTE: Cosmological column densities are taken from Meyer et al 2017
 '''
+#Convert fluxes based on a set of input and a fits header
+
+def convert_fluxes(array,header,conversion='JB_to_Jykms', IRAM_beam_area = None):
+    possible_conversions = ['JB_to_Jykms','JB_to_Jy','JB_to_Tmb','JB_to_Ta',\
+                            'JB_to_Tmb_IRAM','Jy_to_Tmb_IRAM','Tmb_to_Jy',\
+                            'Tmb_IRAM_to_Jy'  ]
+    if conversion not in possible_conversions:
+        raise InputError(f'''The conversion {conversion} is not registered
+Please use on of  {' ,'.join(possible_conversions)}                         
+''')
+    conv_array=copy.deepcopy(array)
+    if not isiterable(conv_array):
+        conv_array = [conv_array]
+    #if the input is Janky per beam we first convert to Jansky
+    if conversion in ['JB_to_Jykms','JB_to_Jy','JB_to_Tmb','JB_to_Ta']:
+        conv_array = JB_to_Jy(conv_array,header)
+        if conversion == 'JB_to_Jy':
+            return conv_array
+        elif conversion == 'JB_to_Jykms':
+            raise InputError('Not implemented yet')
+    if conversion in ['JB_to_Tmb_IRAM','Jy_to_Tmb_IRAM']: 
+        # For converting the Main beam temperature (Yan's) spectra we get (See email 16-02-2024)
+        # With the efficiencies as listed on  https://publicwiki.iram.es/Iram30mEfficiencies
+        return [x/5.3 for x in conv_array]
+    if conversion in ['JB_to_Tmb','Jy_to_Tmb','Tmb_to_Jy']: 
+        #Or the theoretical conversion
+        #from https://science.nrao.edu/facilities/vla/proposing/TBconv
+        # Note that this equation states that I is in mJy/beam but it is not but in mJy
+        # See https://www.atnf.csiro.au/people/Tobias.Westmeier/tools_hihelpers.php and https://safe.nrao.edu/wiki/pub/Main/UsefulFormulas/planck.pdf
+        nu = header['RESTFREQ']/1e9
+        const = 1.2222e3
+        if IRAM_beam_area == None:
+            beam = header['BMAJ']*3600.*header['BMIN']*3600.
+        else: 
+            #This gives the option to define a beam different from the header
+            beam = IRAM_beam_area
+        #beam_IRAM = 22.6211340310488**2
+        if  conversion in ['JB_to_Tmb','Jy_to_Tmb']: 
+            return [x*1000.*const/(nu**2*beam) for x in conv_array] #Temperature in K
+        if  conversion in ['Tmb_to_Jy','Tmb_to_JB']:
+            conv_array =  [x*nu**2*beam/(1000.*const) for x in conv_array] # convert Temperature to Jy
+            if 'Tmb_to_Jy':
+                return conv_array
+    if conversion in ['Tmb_IRAM_to_Jy']:
+        # For converting the Main beam temperature (Yan's) spectra we get (See email 16-02-2024)
+        # With the efficiencies as listed on  https://publicwiki.iram.es/Iram30mEfficiencies
+        return [x*5.3 for x in conv_array]
+ 
+
 
 # function for converting kpc to arcsec and vice versa
 def convertskyangle(angle, distance=-1., unit='arcsec', \
@@ -566,6 +617,67 @@ fit_gaussian.__doc__ =f'''
 def gaussian_function(axis,peak,center,sigma):
     return peak*np.exp(-(axis-center)**2/(2*sigma**2))
 
+
+def get_model_DHI(filename):
+    #Get the sbrs
+    radi,sbr,sbr_2,systemic = load_tirific(filename,\
+        Variables = ['RADI','SBR','SBR_2','VSYS'],array=True)
+    #convert to solar_mass/pc^2
+    sbr_msolar = columndensity(sbr*1000.,systemic=systemic[0],arcsquare=True,solar_mass_output=True)
+    sbr_2_msolar = columndensity(sbr_2*1000.,systemic=systemic[0],arcsquare=True,solar_mass_output=True)
+    # interpolate these to ~1" steps
+    new_radii = np.linspace(0,radi[-1],int(radi[-1]))
+    new_sbr_msolar = np.interp(new_radii,radi,sbr_msolar)
+    new_sbr_2_msolar = np.interp(new_radii,radi,sbr_2_msolar)
+
+    index_1 = np.where(new_sbr_msolar > 1.)[0]
+    index_2 = np.where(new_sbr_2_msolar > 1.)[0]
+    if np.sum(sbr_2) > 0.:
+        if index_1.size > 0 and index_2.size > 0:
+            DHI = float(new_radii[index_1[-1]]+new_radii[index_2[-1]])
+        elif index_1.size > 0:
+            DHI = float(new_radii[index_1[-1]])
+        elif index_2.size > 0:
+            DHI = float(new_radii[index_2[-1]])
+        else:
+            DHI = float('NaN')
+    else:
+        if index_1.size > 0:
+            DHI = float(new_radii[index_1[-1]]*2.)
+        else:
+            DHI = float('NaN')
+    return DHI
+get_model_DHI.__doc__ =f'''
+ NAME:
+    get_DHI
+
+ PURPOSE:
+    get the DHI as determined by the SBR profiles in the fit from the Tirific Template
+
+ CATEGORY:
+    read_functions
+
+ INPUTS:
+    Configuration = Standard FAT configuration
+
+ OPTIONAL INPUTS:
+
+
+    Model = 'Finalmodel'
+    location of the def file to get DHI from. it should be in the fitting dir in the {{Model}}/{{Model}}.def
+
+ OUTPUTS:
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE:
+'''
+
+
+
 def isiterable(variable):
     '''Check whether variable is iterable'''
     #First check it is not a string as those are iterable
@@ -603,6 +715,10 @@ isiterable.__doc__ =f'''
  NOTE:
 '''
 
+#Convert Jansky/beam to Jansky bases on the header
+def JB_to_Jy(array,header):
+    beam_in_pixels = pixels_in_beam(header)
+    return array/beam_in_pixels
 
 def load_tirific(def_input,Variables = None,array = False,\
         ensure_rings = False ,dict=False):
@@ -719,6 +835,14 @@ def reduce_data_axes(data,axes= 3):
     while len(data.shape) > axes:
         data = data[0,:]
     return data
+
+
+def rotateImage(image, angle, pivot,order=1):
+    padX = [int(image.shape[1] - pivot[0]), int(pivot[0])]
+    padY = [int(image.shape[0] - pivot[1]), int(pivot[1])]
+    imgP = np.pad(image, [padY, padX], 'constant')
+    imgR = rotate(imgP, angle, axes=(1, 0), reshape=False,order=order)
+    return imgR[padY[0]: -padY[1], padX[0]: -padX[1]]
 
 def rotateCube(Cube, angle, pivot,order=1):
     padX= [int(Cube.shape[2] - pivot[0]), int(pivot[0])]
