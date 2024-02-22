@@ -292,7 +292,7 @@ Please use on of  {' ,'.join(possible_conversions)}
     if not isiterable(conv_array):
         conv_array = [conv_array]
     #if the input is Janky per beam we first convert to Jansky
-    if conversion in ['JB_to_Jykms','JB_to_Jy','JB_to_Tmb','JB_to_Ta']:
+    if conversion in ['JB_to_Jykms','JB_to_Jy','JB_to_Tmb','JB_to_Ta','JB_to_Tmb_IRAM']:
         conv_array = JB_to_Jy(conv_array,header)
         if conversion == 'JB_to_Jy':
             return conv_array
