@@ -12,6 +12,7 @@ from collections import OrderedDict #used in Proper_Dictionary
 from astropy.io import fits
 from scipy.ndimage import rotate, map_coordinates
 from scipy.optimize import curve_fit, OptimizeWarning
+
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import matplotlib
@@ -19,6 +20,7 @@ with warnings.catch_warnings():
     import matplotlib.pyplot as plt
     import matplotlib.gridspec as gridspec
     from matplotlib.patches import Ellipse
+    import matplotlib.font_manager as mpl_fm
 
 class InputError(Exception):
     pass
@@ -164,7 +166,48 @@ convertRADEC.__doc__ =f'''
 
  NOTE:
 '''
+def beam_artist(ax,hdr,im_wcs,fcolor = 'none',ecolor='k'):
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    ghxloc, ghyloc = im_wcs.wcs_pix2world(float(xmin+(xmax-xmin)/18.), float(ymin+(ymax-ymin)/18.), 1.)
+    localoc = [float(ghxloc),float(ghyloc) ]
+    widthb = hdr['BMIN']
+    heightb = hdr['BMAJ']
+    try:
+        angleb  = hdr['BPA']
+    except KeyError:
+        angleb = 0.
+    #either the location or the beam has to be transformed 
+    beam = Ellipse(xy=localoc, width=widthb, height=heightb, angle=angleb, transform=ax.get_transform('world'),
+           edgecolor=ecolor, lw=1, facecolor=fcolor, hatch='/////',zorder=15)
+    return beam
 
+beam_artist.__doc__ =f'''
+ NAME:
+    beam_artist
+
+ PURPOSE:
+    create a beam patch
+        
+ CATEGORY:
+    write_functions
+
+ INPUTS:
+    ax = is the axes object where the beam is intended to go
+    hdr = the image header
+    im_wcs = WCS frame of the image
+
+ OPTIONAL INPUTS:
+
+
+ OUTPUTS:
+    BEAM_ARTIST
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+
+ NOTE:
+ '''
 def columndensity(levels,systemic = 100.,beam=None,\
         channel_width=None,column= False,arcsquare=False,solar_mass_input =False\
         ,solar_mass_output=False, verbose= False, linewidth= None):
@@ -919,6 +962,90 @@ regrid_array.__doc__ =f'''
 
  NOTE:
 '''
+
+def setup_fig(size_factor=1.5):
+    Overview = plt.figure(2, figsize=(7, 7), dpi=300, facecolor='w', edgecolor='k')
+#stupid pythonic layout for grid spec, which means it is yx instead of xy like for normal human beings
+    mpl_fm.fontManager.addfont( "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf")
+    font_name = mpl_fm.FontProperties(fname= "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf").get_name()
+    labelfont = {'family': font_name,
+         'weight': 'normal',
+         'size': 8*size_factor}
+    plt.rc('font', **labelfont)
+    plt.rcParams['xtick.direction'] = 'in'
+    plt.rcParams['ytick.direction'] = 'in'
+    return Overview
+setup_fig.__doc__ =f'''
+ NAME:
+    setup_fig
+ PURPOSE:
+    Setup a figure to plot in
+ CATEGORY:
+   
+ INPUTS:
+    
+ OPTIONAL INPUTS:
+
+ OUTPUTS:
+  
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    scipy.ndimage.map_coordinates, np.array, np.mgrid
+
+ NOTE:
+'''
+
+
+def square_plot(ax):
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    
+    smaller = 90
+    xmin += smaller
+    ymin += smaller
+    xmax -= smaller
+    ymax -= smaller  
+    ax.set_ylim(ymin,ymax) 
+    ax.set_xlim(xmin,xmax)
+   
+    if xmax > ymax:
+       
+        diff = int(xmax-ymax)/2.
+        ax.set_ylim(ymin-diff,ymax+diff)
+        ymin, ymax = ax.get_ylim()
+    else:
+      
+        diff = int(ymax-xmax)/2.
+        ax.set_xlim(xmin-diff,xmax+diff)
+        xmin, xmax = ax.get_xlim()
+    
+square_plot.__doc__ =f'''
+ NAME:
+    square_plot
+
+ PURPOSE:
+    square the axes object
+        
+ CATEGORY:
+    write_functions
+
+ INPUTS:
+    ax = is the axes object to be squared
+        
+ OPTIONAL INPUTS:
+
+
+ OUTPUTS:
+    square axes
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+
+ NOTE:
+'''
+
+
 def update_disk_angles(Tirific_Template, verbose = False):
     extension = ['','_2']
     for ext in extension:
