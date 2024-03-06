@@ -5,17 +5,69 @@ import copy
 import os
 import re
 import warnings
+import traceback
 from astropy.wcs import WCS
+from collections import OrderedDict #used in Proper_Dictionary
 
 from astropy.io import fits
 from scipy.ndimage import rotate,map_coordinates
 from scipy.optimize import curve_fit, OptimizeWarning
 
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    import matplotlib
+    matplotlib.use('pdf')
+    import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
+    from matplotlib.patches import Ellipse
+    import matplotlib.font_manager as mpl_fm
 
 class InputError(Exception):
     pass
 class FittingError(Exception):
     pass
+# A class of ordered dictionary where keys can be inserted in at specified locations or at the end.
+class Proper_Dictionary(OrderedDict):
+    def __setitem__(self, key, value):
+        if key not in self:
+            # If it is a new item we only allow it if it is not Configuration or Original_Cube or if we are in setup_configuration
+            try:
+                function,variable,empty = traceback.format_stack()[-2].split('\n')
+            except ValueError: 
+                function,variable = traceback.format_stack()[-2].split('\n')
+            function = function.split()[-1].strip()
+            variable = variable.split('[')[0].strip()
+            if variable == 'Original_Configuration' or variable == 'Configuration':
+                if function != 'setup_configuration':
+                    raise ProgramError("FAT does not allow additional values to the Configuration outside the setup_configuration in support_functions.")
+        OrderedDict.__setitem__(self,key, value)
+    #    "what habbens now")
+    def insert(self, existing_key, new_key, key_value):
+        done = False
+        if new_key in self:
+            self[new_key] = key_value
+            done = True
+        else:
+            new_orderded_dict = self.__class__()
+            for key, value in self.items():
+                new_orderded_dict[key] = value
+                if key == existing_key:
+                    new_orderded_dict[new_key] = key_value
+                    done = True
+            if not done:
+                new_orderded_dict[new_key] = key_value
+                done = True
+                print(
+                    f"----!!!!!!!! YOUR {new_key} was appended at the end as you provided the non-existing {existing_key} to add it after!!!!!!---------")
+            self.clear()
+            self.update(new_orderded_dict)
+
+        if not done:
+            print("----!!!!!!!!We were unable to add your key!!!!!!---------")
+
+Proper_Dictionary.__doc__=f'''
+A class of ordered dictionary where keys can be inserted in at specified locations or at the end.
+'''
 
 
         # a Function to convert the RA and DEC into hour angle (invert = False) and vice versa (default)
@@ -114,6 +166,210 @@ convertRADEC.__doc__ =f'''
 
  NOTE:
 '''
+def beam_artist(ax,hdr,im_wcs,fcolor = 'none',ecolor='k'):
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    ghxloc, ghyloc = im_wcs.wcs_pix2world(float(xmin+(xmax-xmin)/18.), float(ymin+(ymax-ymin)/18.), 1.)
+    localoc = [float(ghxloc),float(ghyloc) ]
+    widthb = hdr['BMIN']
+    heightb = hdr['BMAJ']
+    try:
+        angleb  = hdr['BPA']
+    except KeyError:
+        angleb = 0.
+    #either the location or the beam has to be transformed 
+    beam = Ellipse(xy=localoc, width=widthb, height=heightb, angle=angleb, transform=ax.get_transform('world'),
+           edgecolor=ecolor, lw=1, facecolor=fcolor, hatch='/////',zorder=15)
+    return beam
+
+beam_artist.__doc__ =f'''
+ NAME:
+    beam_artist
+
+ PURPOSE:
+    create a beam patch
+        
+ CATEGORY:
+    write_functions
+
+ INPUTS:
+    ax = is the axes object where the beam is intended to go
+    hdr = the image header
+    im_wcs = WCS frame of the image
+
+ OPTIONAL INPUTS:
+
+
+ OUTPUTS:
+    BEAM_ARTIST
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+
+ NOTE:
+ '''
+def columndensity(levels,systemic = 100.,beam=None,\
+        channel_width=None,column= False,arcsquare=False,solar_mass_input =False\
+        ,solar_mass_output=False, verbose= False, linewidth= None):
+    if beam is None:
+        if not arcsquare:
+            print(f'COLUMNDENSITY: A beam is required to make the proper calculation''')
+
+    if channel_width == None:
+        if arcsquare:
+            channel_width = 1.
+        else:
+            print(f'COLUMNDENSITY: A channel width is required to make the proper calculation''')
+    if linewidth != None:
+        channel_width = linewidth/(np.sqrt(linewidth/channel_width))
+    if verbose:
+        print(f'''COLUMNDENSITY: Starting conversion from the following input.
+{'':8s}Levels = {levels}
+{'':8s}Beam = {beam}
+{'':8s}channel_width = {channel_width}
+''')
+    beam=np.array(beam,dtype=float)
+    f0 = 1.420405751786E9 #Hz rest freq
+    c = 299792.458 # light speed in km / s
+    pc = 3.086e+18 #parsec in cm
+    solarmass = 1.98855e30 #Solar mass in kg
+    mHI = 1.6737236e-27 #neutral hydrogen mass in kg
+    if verbose:
+        print(f'''COLUMNDENSITY: We have the following input for calculating the columns.
+{'':8s}COLUMNDENSITY: level = {levels}, channel_width = {channel_width}, beam = {beam}, systemic = {systemic})
+''')
+
+    f = f0 * (1 - (systemic / c)) #Systemic frequency
+    if arcsquare:
+        #Should we have the (f0/f)**2 factor here????
+        HIconv = 605.7383 * 1.823E18 * (2. *np.pi / (np.log(256.)))
+        if column:
+            # If the input is in solarmass we want to convert back to column densities
+            if solar_mass_input:
+                levels=np.array([x*solarmass/(mHI*pc**2) for x in levels],dtype=float)
+            #levels=levels/(HIconv*channel_width)
+
+            levels = levels/(HIconv*channel_width)
+        else:
+
+            levels = HIconv*levels*channel_width
+            if solar_mass_output:
+                levels=levels*mHI/solarmass*pc*pc
+    else:
+        if beam.size <2:
+            beam= [beam,beam]
+        b=beam[0]*beam[1]
+        if column:
+            if solar_mass_input:
+                levels=levels*solarmass/(mHI*pc**2)
+            TK = levels/(1.823e18*channel_width)
+            levels = TK/(((605.7383)/(b))*(f0/f)**2)
+        else:
+            TK=((605.7383)/(b))*(f0/f)**2*levels
+            levels = TK*(1.823e18*channel_width)
+    if not column and solar_mass_input:
+        levels = levels*mHI*pc**2/solarmass
+    return levels
+
+columndensity.__doc__ =f'''
+ NAME:
+    columndensity
+
+ PURPOSE:
+    Convert the various surface brightnesses to other units
+
+ CATEGORY:
+    support_functions
+
+ INPUTS:
+    Configuration = Standard FAT configuration
+    levels = the values to convert
+
+ OPTIONAL INPUTS:
+
+
+    systemic = 100.
+    the systemic velocity of the source
+
+    beam  = [-1.,-1.]
+    the FWHM of the beam in arcsec, if unset taken from Configuration
+
+    channelwidth = -1. width of a channel in km/s
+    channelwidth of the observation if unset taken from Configuration
+
+    column = false
+    if True input is columndensities else in mJy
+
+    arcsquare=False
+    If true then  input is assumed to be in Jy/arcsec^2.
+    If the input is in Jy/arcsec^2*km/s then channelwidth must be 1.
+    This is assumed when channelwidth is left unset
+
+    solar_mass_input =False
+    If true input is assumed to be in M_solar/pc^2
+
+    solar_mass_output=False
+    If true output is provided in M_solar/pc^2
+
+ OUTPUTS:
+    The converted values
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE: Cosmological column densities are taken from Meyer et al 2017
+'''
+#Convert fluxes based on a set of input and a fits header
+
+def convert_fluxes(array,header,conversion='JB_to_Jykms', IRAM_beam_area = None):
+    possible_conversions = ['JB_to_Jykms','JB_to_Jy','JB_to_Tmb','JB_to_Ta',\
+                            'JB_to_Tmb_IRAM','Jy_to_Tmb_IRAM','Tmb_to_Jy',\
+                            'Tmb_IRAM_to_Jy'  ]
+    if conversion not in possible_conversions:
+        raise InputError(f'''The conversion {conversion} is not registered
+Please use on of  {' ,'.join(possible_conversions)}                         
+''')
+    conv_array=copy.deepcopy(array)
+    if not isiterable(conv_array):
+        conv_array = [conv_array]
+    #if the input is Janky per beam we first convert to Jansky
+    if conversion in ['JB_to_Jykms','JB_to_Jy','JB_to_Tmb','JB_to_Ta','JB_to_Tmb_IRAM']:
+        conv_array = JB_to_Jy(conv_array,header)
+        if conversion == 'JB_to_Jy':
+            return conv_array
+        elif conversion == 'JB_to_Jykms':
+            raise InputError('Not implemented yet')
+    if conversion in ['JB_to_Tmb_IRAM','Jy_to_Tmb_IRAM']: 
+        # For converting the Main beam temperature (Yan's) spectra we get (See email 16-02-2024)
+        # With the efficiencies as listed on  https://publicwiki.iram.es/Iram30mEfficiencies
+        return [x/5.3 for x in conv_array]
+    if conversion in ['JB_to_Tmb','Jy_to_Tmb','Tmb_to_Jy']: 
+        #Or the theoretical conversion
+        #from https://science.nrao.edu/facilities/vla/proposing/TBconv
+        # Note that this equation states that I is in mJy/beam but it is not but in mJy
+        # See https://www.atnf.csiro.au/people/Tobias.Westmeier/tools_hihelpers.php and https://safe.nrao.edu/wiki/pub/Main/UsefulFormulas/planck.pdf
+        nu = header['RESTFREQ']/1e9
+        const = 1.2222e3
+        if IRAM_beam_area == None:
+            beam = header['BMAJ']*3600.*header['BMIN']*3600.
+        else: 
+            #This gives the option to define a beam different from the header
+            beam = IRAM_beam_area
+        #beam_IRAM = 22.6211340310488**2
+        if  conversion in ['JB_to_Tmb','Jy_to_Tmb']: 
+            return [x*1000.*const/(nu**2*beam) for x in conv_array] #Temperature in K
+        if  conversion in ['Tmb_to_Jy','Tmb_to_JB']:
+            conv_array =  [x*nu**2*beam/(1000.*const) for x in conv_array] # convert Temperature to Jy
+            if 'Tmb_to_Jy':
+                return conv_array
+    if conversion in ['Tmb_IRAM_to_Jy']:
+        # For converting the Main beam temperature (Yan's) spectra we get (See email 16-02-2024)
+        # With the efficiencies as listed on  https://publicwiki.iram.es/Iram30mEfficiencies
+        return [x*5.3 for x in conv_array]
+ 
+
 
 # function for converting kpc to arcsec and vice versa
 def convertskyangle(angle, distance=-1., unit='arcsec', \
@@ -405,6 +661,107 @@ def gaussian_function(axis,peak,center,sigma):
     return peak*np.exp(-(axis-center)**2/(2*sigma**2))
 
 
+def get_model_DHI(filename):
+    #Get the sbrs
+    radi,sbr,sbr_2,systemic = load_tirific(filename,\
+        Variables = ['RADI','SBR','SBR_2','VSYS'],array=True)
+    #convert to solar_mass/pc^2
+    sbr_msolar = columndensity(sbr*1000.,systemic=systemic[0],arcsquare=True,solar_mass_output=True)
+    sbr_2_msolar = columndensity(sbr_2*1000.,systemic=systemic[0],arcsquare=True,solar_mass_output=True)
+    # interpolate these to ~1" steps
+    new_radii = np.linspace(0,radi[-1],int(radi[-1]))
+    new_sbr_msolar = np.interp(new_radii,radi,sbr_msolar)
+    new_sbr_2_msolar = np.interp(new_radii,radi,sbr_2_msolar)
+
+    index_1 = np.where(new_sbr_msolar > 1.)[0]
+    index_2 = np.where(new_sbr_2_msolar > 1.)[0]
+    if np.sum(sbr_2) > 0.:
+        if index_1.size > 0 and index_2.size > 0:
+            DHI = float(new_radii[index_1[-1]]+new_radii[index_2[-1]])
+        elif index_1.size > 0:
+            DHI = float(new_radii[index_1[-1]])
+        elif index_2.size > 0:
+            DHI = float(new_radii[index_2[-1]])
+        else:
+            DHI = float('NaN')
+    else:
+        if index_1.size > 0:
+            DHI = float(new_radii[index_1[-1]]*2.)
+        else:
+            DHI = float('NaN')
+    return DHI
+get_model_DHI.__doc__ =f'''
+ NAME:
+    get_DHI
+
+ PURPOSE:
+    get the DHI as determined by the SBR profiles in the fit from the Tirific Template
+
+ CATEGORY:
+    read_functions
+
+ INPUTS:
+    Configuration = Standard FAT configuration
+
+ OPTIONAL INPUTS:
+
+
+    Model = 'Finalmodel'
+    location of the def file to get DHI from. it should be in the fitting dir in the {{Model}}/{{Model}}.def
+
+ OUTPUTS:
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE:
+'''
+
+
+
+def isiterable(variable):
+    '''Check whether variable is iterable'''
+    #First check it is not a string as those are iterable
+    if isinstance(variable,str):
+        return False
+    try:
+        iter(variable)
+    except TypeError:
+        return False
+
+    return True
+isiterable.__doc__ =f'''
+ NAME:
+    isiterable
+
+ PURPOSE:
+    Check whether variable is iterable
+
+ CATEGORY:
+    support_functions
+
+ INPUTS:
+    variable = variable to check
+
+ OPTIONAL INPUTS:
+
+ OUTPUTS:
+    True if iterable False if not
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE:
+'''
+
+#Convert Jansky/beam to Jansky bases on the header
+def JB_to_Jy(array,header):
+    beam_in_pixels = pixels_in_beam(header)
+    return array/beam_in_pixels
 
 def isiterable(variable):
     '''Check whether variable is iterable'''
@@ -450,7 +807,7 @@ def load_tirific(def_input,Variables = None,array = False,\
         ensure_rings = False ,dict=False):
     #Cause python is the dumbest and mutable objects in the FAT_defaults
     # such as lists transfer
-    if Variables is None:
+    if Variables == None:
         Variables = ['BMIN','BMAJ','BPA','RMS','DISTANCE','NUR','RADI',\
                      'VROT','Z0', 'SBR', 'INCL','PA','XPOS','YPOS','VSYS',\
                      'SDIS','VROT_2',  'Z0_2','SBR_2','INCL_2','PA_2','XPOS_2',\
@@ -463,6 +820,7 @@ def load_tirific(def_input,Variables = None,array = False,\
 
     out = []
     for key in Variables:
+
         try:
             out.append([float(x) for x  in def_input[key].split()])
         except KeyError:
@@ -561,6 +919,14 @@ def reduce_data_axes(data,axes= 3):
         data = data[0,:]
     return data
 
+
+def rotateImage(image, angle, pivot,order=1):
+    padX = [int(image.shape[1] - pivot[0]), int(pivot[0])]
+    padY = [int(image.shape[0] - pivot[1]), int(pivot[1])]
+    imgP = np.pad(image, [padY, padX], 'constant')
+    imgR = rotate(imgP, angle, axes=(1, 0), reshape=False,order=order)
+    return imgR[padY[0]: -padY[1], padX[0]: -padX[1]]
+
 def rotateCube(Cube, angle, pivot,order=1):
     padX= [int(Cube.shape[2] - pivot[0]), int(pivot[0])]
     padY= [int(Cube.shape[1] - pivot[1]), int(pivot[1])]
@@ -636,6 +1002,90 @@ regrid_array.__doc__ =f'''
 
  NOTE:
 '''
+
+def setup_fig(size_factor=1.5):
+    Overview = plt.figure(2, figsize=(7, 7), dpi=300, facecolor='w', edgecolor='k')
+#stupid pythonic layout for grid spec, which means it is yx instead of xy like for normal human beings
+    mpl_fm.fontManager.addfont( "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf")
+    font_name = mpl_fm.FontProperties(fname= "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf").get_name()
+    labelfont = {'family': font_name,
+         'weight': 'normal',
+         'size': 8*size_factor}
+    plt.rc('font', **labelfont)
+    plt.rcParams['xtick.direction'] = 'in'
+    plt.rcParams['ytick.direction'] = 'in'
+    return Overview
+setup_fig.__doc__ =f'''
+ NAME:
+    setup_fig
+ PURPOSE:
+    Setup a figure to plot in
+ CATEGORY:
+   
+ INPUTS:
+    
+ OPTIONAL INPUTS:
+
+ OUTPUTS:
+  
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    scipy.ndimage.map_coordinates, np.array, np.mgrid
+
+ NOTE:
+'''
+
+
+def square_plot(ax):
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    
+    smaller = 90
+    xmin += smaller
+    ymin += smaller
+    xmax -= smaller
+    ymax -= smaller  
+    ax.set_ylim(ymin,ymax) 
+    ax.set_xlim(xmin,xmax)
+   
+    if xmax > ymax:
+       
+        diff = int(xmax-ymax)/2.
+        ax.set_ylim(ymin-diff,ymax+diff)
+        ymin, ymax = ax.get_ylim()
+    else:
+      
+        diff = int(ymax-xmax)/2.
+        ax.set_xlim(xmin-diff,xmax+diff)
+        xmin, xmax = ax.get_xlim()
+    
+square_plot.__doc__ =f'''
+ NAME:
+    square_plot
+
+ PURPOSE:
+    square the axes object
+        
+ CATEGORY:
+    write_functions
+
+ INPUTS:
+    ax = is the axes object to be squared
+        
+ OPTIONAL INPUTS:
+
+
+ OUTPUTS:
+    square axes
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+
+ NOTE:
+'''
+
+
 def update_disk_angles(Tirific_Template, verbose = False):
     extension = ['','_2']
     for ext in extension:
@@ -687,7 +1137,7 @@ def tirific_template(filename = ''):
     else:
         with open(filename, 'r') as tmp:
             template = tmp.readlines()
-    result = {}
+    result = Proper_Dictionary()
     counter = 0
     # Separate the keyword names
     for line in template:
@@ -728,3 +1178,53 @@ tirific_template.__doc__ ='''
 
  NOTE:
 '''
+
+def write_tirific(Tirific_Template, name = 'tirific.def',\
+                full_name = False  ):
+    #IF we're writing we bump up the restart_ID and adjust the AZ1P angles to the current warping
+    if int(Tirific_Template['NUR']) == 2:
+        update_disk_angles(Tirific_Template )
+    if 'RESTARTID' in Tirific_Template:
+        Tirific_Template['RESTARTID'] = str(int(Tirific_Template['RESTARTID'])+1)
+   
+    if full_name:
+        file_name = name
+    else:
+        current_dir = os.getcwd()
+        file_name = f'{current_dir}/{name}'
+    with open(file_name, 'w') as file:
+        for key in Tirific_Template:
+            if key[0:5] == 'EMPTY':
+                file.write('\n')
+            else:
+                file.write((f"{key}= {Tirific_Template[key]} \n"))
+write_tirific.__doc__ =f'''
+ NAME:
+    tirific
+
+ PURPOSE:
+    Write a tirific template to file
+
+ CATEGORY:
+    write_functions
+
+ INPUTS:
+    Configuration = Standard FAT configuration
+    Tirific_Template = Standard FAT Tirific Template
+
+ OPTIONAL INPUTS:
+
+
+    name = 'tirific.def'
+    name of the file to write to
+
+ OUTPUTS:
+    Tirific def file
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE:
+ '''
