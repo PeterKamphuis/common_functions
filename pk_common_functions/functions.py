@@ -8,7 +8,7 @@ import warnings
 from astropy.wcs import WCS
 
 from astropy.io import fits
-from scipy.ndimage import rotate
+from scipy.ndimage import rotate,map_coordinates
 from scipy.optimize import curve_fit, OptimizeWarning
 
 
@@ -232,7 +232,7 @@ def cutout_cube(filename,sub_cube, outname=None):
     hdr = Cube[0].header
 
     if hdr['NAXIS'] == 3:
-        print(sub_cube[0,0],sub_cube[0,1],sub_cube[1,0],sub_cube[1,1],sub_cube[2,0],sub_cube[2,1])
+
         data = Cube[0].data[sub_cube[0,0]:sub_cube[0,1],sub_cube[1,0]:sub_cube[1,1],sub_cube[2,0]:sub_cube[2,1]]
         hdr['NAXIS1'] = sub_cube[2,1]-sub_cube[2,0]
         hdr['NAXIS2'] = sub_cube[1,1]-sub_cube[1,0]
@@ -403,6 +403,46 @@ fit_gaussian.__doc__ =f'''
 
 def gaussian_function(axis,peak,center,sigma):
     return peak*np.exp(-(axis-center)**2/(2*sigma**2))
+
+
+
+def isiterable(variable):
+    '''Check whether variable is iterable'''
+    #First check it is not a string as those are iterable
+    if isinstance(variable,str):
+        return False
+    try:
+        iter(variable)
+    except TypeError:
+        return False
+
+    return True
+isiterable.__doc__ =f'''
+ NAME:
+    isiterable
+
+ PURPOSE:
+    Check whether variable is iterable
+
+ CATEGORY:
+    support_functions
+
+ INPUTS:
+    variable = variable to check
+
+ OPTIONAL INPUTS:
+
+ OUTPUTS:
+    True if iterable False if not
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE:
+'''
+
 
 
 
