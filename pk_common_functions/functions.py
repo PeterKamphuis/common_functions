@@ -10,7 +10,7 @@ from astropy.wcs import WCS
 from collections import OrderedDict #used in Proper_Dictionary
 
 from astropy.io import fits
-from scipy.ndimage import rotate, map_coordinates
+from scipy.ndimage import rotate,map_coordinates
 from scipy.optimize import curve_fit, OptimizeWarning
 
 with warnings.catch_warnings():
@@ -473,7 +473,7 @@ columndensity.__doc__ =f'''
 
     arcsquare=False
     If true then  input is assumed to be in Jy/arcsec^2.
-    If the input is in Jy/arcsec^2*km/s then channelwidth must be 1.
+    If the input is in mJy/arcsec^2*km/s then channelwidth must be 1.
     This is assumed when channelwidth is left unset
 
     solar_mass_input =False
@@ -689,7 +689,6 @@ def cutout_cube(filename,sub_cube, outname=None):
     hdr = Cube[0].header
 
     if hdr['NAXIS'] == 3:
-        #print(sub_cube[0,0],sub_cube[0,1],sub_cube[1,0],sub_cube[1,1],sub_cube[2,0],sub_cube[2,1])
         data = Cube[0].data[sub_cube[0,0]:sub_cube[0,1],sub_cube[1,0]:sub_cube[1,1],sub_cube[2,0]:sub_cube[2,1]]
         hdr['NAXIS1'] = sub_cube[2,1]-sub_cube[2,0]
         hdr['NAXIS2'] = sub_cube[1,1]-sub_cube[1,0]
@@ -1247,8 +1246,12 @@ regrid_array.__doc__ =f'''
 def setup_fig(size_factor=1.5,figsize= [7,7]):
     Overview = plt.figure(2, figsize=figsize, dpi=300, facecolor='w', edgecolor='k')
 #stupid pythonic layout for grid spec, which means it is yx instead of xy like for normal human beings
-    mpl_fm.fontManager.addfont( "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf")
-    font_name = mpl_fm.FontProperties(fname= "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf").get_name()
+    try:
+        mpl_fm.fontManager.addfont( "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf")
+        font_name = mpl_fm.FontProperties(fname= "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf").get_name()
+    except FileNotFoundError:
+        font_name= 'Deja Vu'
+        
     labelfont = {'family': font_name,
          'weight': 'normal',
          'size': 8*size_factor}
