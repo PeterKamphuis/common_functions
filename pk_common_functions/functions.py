@@ -19,10 +19,16 @@ with warnings.catch_warnings():
     matplotlib.use('pdf')
     import matplotlib.pyplot as plt
     import matplotlib.gridspec as gridspec
+    import matplotlib.colors as colors
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
     from matplotlib.patches import Ellipse
     import matplotlib.font_manager as mpl_fm
+    import matplotlib.axes as maxes
+    from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 
 class InputError(Exception):
+    pass
+class ProgramError(Exception):
     pass
 class FittingError(Exception):
     pass
@@ -69,6 +75,84 @@ Proper_Dictionary.__doc__=f'''
 A class of ordered dictionary where keys can be inserted in at specified locations or at the end.
 '''
 
+def add_cb(plot_dict,range= None,label = None,detached=False,\
+                    location='right', cmap ='rainbow', minimal_ticks = False,\
+                    ticks_formatter = None, include_zero=False,size=8., cbar_ticks = None):
+    '''Add a (detached) velocity colorbar to overview for indicating the velocity colors'''
+    if range is None and detached:
+        raise InputError(f'You have to set a range to create a detacched colorbar')
+    divideropt = make_axes_locatable(plot_dict['ax'])
+    cb_ax = divideropt.append_axes(location, size="5%", pad=0.05, \
+                                   axes_class=maxes.Axes, zorder=0)
+   
+    if location in ['left','right']:
+        orientation='vertical'
+    else:
+        orientation='horizontal'
+   
+   
+    if detached:
+        norm = colors.Normalize(vmin=range[0], vmax=range[1])
+        ax_use = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    else: 
+        ax_use= plot_dict['plot']
+    #fig.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+    colorbar_plot = plt.colorbar(ax_use,\
+                                  cax=cb_ax, orientation=orientation)
+ 
+    colorbar_plot.ax.zorder = -1
+    if location in ['left','right']:
+        cb_ax.yaxis.set_ticks_position(location)
+    else:
+        cb_ax.xaxis.set_ticks_position(location)
+    if range is None:
+        range = [ax_use.norm.vmin,ax_use.norm.vmax]
+
+    if cbar_ticks is None:
+        if minimal_ticks:
+            tick_locations = range
+        else:
+          
+            plot_range= range[1]-range[0]
+            tick_locations = np.array([0.,0.25,0.5,0.75,1.],dtype=float)*plot_range+range[0]
+    else:
+        tick_locations= cbar_ticks
+    #print(range,tick_locations)
+
+    if include_zero:
+        replace = np.min(np.abs(tick_locations))
+        tick_locations[np.abs(tick_locations)== replace] = 0.
+  
+    colorbar_plot.set_ticks(tick_locations)
+    if not ticks_formatter is None:
+        tick_labels=[ticks_formatter(x) for x in tick_locations]
+        colorbar_plot.set_ticklabels(tick_labels,size=size*0.4)
+
+    if not label is None:
+        if location in ['left','right']:
+            colorbar_plot.set_label(label[0], rotation=label[1],size=size*0.5)
+        else:
+            colorbar_plot.ax.set_title(label[0], rotation=label[1],size=size*0.5)
+    return colorbar_plot
+
+'''A function for calculating a standard colorange for an image'''
+def calculate_colorrange(image):
+    #print(f'This is the minimum {np.nanmin(image)} and the maximum {np.nanmax(image)}')
+    image_sort = np.sort(np.ravel(image[~np.isnan(image)]))
+    minimum = image_sort[int(len(image_sort)*0.05)]
+    maximum = image_sort[-1*int(len(image_sort)*0.025)]
+    return [minimum,maximum]
+
+
+''' A function to ensure that the signs of 2 array are the same '''
+def check_signs(array1,array2):
+    same = True
+    signs1 = [x/abs(x) if x != 0. else 0. for x in array1]
+    signs2 = [x/abs(x) if x != 0. else 0. for x in array2]
+    #print(signs1,signs2)
+    if not np.array_equiv(signs1,signs2):
+        same= False
+    return same
 
         # a Function to convert the RA and DEC into hour angle (invert = False) and vice versa (default)
 def convertRADEC(RAin,DECin,invert=False, colon=False, verbose=False):
@@ -109,6 +193,12 @@ def convertRADEC(RAin,DECin,invert=False, colon=False, verbose=False):
         if isinstance(RA,str):
             RA=[RA]
             DEC=[DEC]
+        else:
+            try:
+                _ = (e for e in RA)
+            except TypeError:
+                RA= [RA]
+                DEC =[DEC]
 
         xpos=RA
         ypos=DEC
@@ -166,6 +256,87 @@ convertRADEC.__doc__ =f'''
 
  NOTE:
 '''
+
+
+
+def copy_disk(Template_in, olddisk = 1, newdisk =-1):
+    '''Routine to copy a disk in the tirific template file'''
+    Template = copy.deepcopy(Template_in)
+
+    start = 0
+    startlast = 0.
+    if newdisk == -1: newdisk = int(Template["NDISKS"])+1
+
+    if int(Template["NDISKS"]) < newdisk:
+        Template["NDISKS"] = f"{newdisk:d}"
+    copkeys = "Empty"
+    last = 'RADI'
+    for key in Template:
+        if start == 2:
+            if copkeys == "Empty":
+                copkeys = [key]
+            else:
+                copkeys.append(key)
+        if key == 'RADI':
+            start += 1
+            if olddisk == 1:
+                start += 1
+        if '_' in key:
+            key_ext = key.split('_')
+            if key_ext[1] == str(olddisk) and start == 1:
+                start += 1
+                if olddisk > 1:
+                    copkeys = [key]
+            elif (key_ext[1] != str(olddisk)) and start == 2:
+                del copkeys[-1]
+                start += 1
+            if key_ext[1] == str(newdisk-1) and startlast == 0:
+                startlast = 1
+            if key_ext[1] == str(newdisk-1) and startlast == 1:
+                last = key
+            if key_ext[1] != str(newdisk-1) and startlast == 1:
+                startlast += 1
+        if key == 'CONDISP' and (start == 2 or startlast == 1):
+            if start == 2:
+                del copkeys[-1]
+            startlast += 1
+            start += 1
+    for key in reversed(copkeys):
+        var_name = key.split('_')[0]
+        Template.insert(last, f"{var_name}_{newdisk:d}", Template[key])
+    Template.insert(f"CFLUX_{newdisk-1:d}", f"CFLUX_{newdisk:d}",
+                    Template[f"CFLUX_{newdisk-1:d}"])
+    return Template
+
+
+copy_disk.__doc__ = f'''
+NAME:
+   copy_disk
+
+PURPOSE:
+    Routine to copy a disk in the tirific template file
+
+CATEGORY:
+   agc
+
+INPUTS:
+   Olddisk = the # of the disk to be copied in def file notation, i.e 1 = paramaters without extension, 2 with extension _2 and so on
+   newdisk = the # of the disk to be copied in def file notation, i.e 1 = paramaters without extension, 2 with extension _2 and so on
+
+OPTIONAL INPUTS:
+
+OUTPUTS:
+    the variable names of the new disk
+
+OPTIONAL OUTPUTS:
+
+PROCEDURES CALLED:
+   Unspecified
+
+NOTE:
+'''
+
+
 def beam_artist(ax,hdr,im_wcs,fcolor = 'none',ecolor='k'):
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
@@ -478,6 +649,36 @@ convertskyangle.__doc__ =f'''
  NOTE:
 '''
 
+def create_profile(cube,mask=None):
+    data = cube[0].data
+    if not mask is None:
+        mask_data = np.array(mask[0].data,dtype=float)
+        #try:
+        mask_data[np.where(mask_data == 0)] = float('NaN')
+        #except:
+        #    pass
+        data[np.isnan(mask_data)] = 0.
+
+    intensity = ((data.sum(axis=1).sum(axis=1))*abs(cube[0].header['CDELT3']))/pixels_in_beam(cube[0].header)
+    zaxis =  cube[0].header['CRVAL3'] + (np.arange(cube[0].header['NAXIS3'])+1 \
+              - cube[0].header['CRPIX3']) * cube[0].header['CDELT3']
+    if 'BUNIT' in cube[0].header:
+        stri =  cube[0].header['BUNIT'].split('/')[0]
+    else:
+        sti = 'Jy'
+    
+    if 'CUNIT3' in cube[0].header:
+        vu =  cube[0].header['CUNIT3']
+    else:
+        if  cube[0].header['CDELT3'] <150.:
+            vu = 'km/s'
+        else:
+            vu = 'm/s'    
+    fu = f'{stri} {vu}'
+
+    profile = {'axis': zaxis,'intensity': intensity, 'vel_unit': vu, 'flux_unit':fu }   
+    return profile
+        
 
 def cutout_cube(filename,sub_cube, outname=None):
 
@@ -488,7 +689,7 @@ def cutout_cube(filename,sub_cube, outname=None):
     hdr = Cube[0].header
 
     if hdr['NAXIS'] == 3:
-        print(sub_cube[0,0],sub_cube[0,1],sub_cube[1,0],sub_cube[1,1],sub_cube[2,0],sub_cube[2,1])
+        #print(sub_cube[0,0],sub_cube[0,1],sub_cube[1,0],sub_cube[1,1],sub_cube[2,0],sub_cube[2,1])
         data = Cube[0].data[sub_cube[0,0]:sub_cube[0,1],sub_cube[1,0]:sub_cube[1,1],sub_cube[2,0]:sub_cube[2,1]]
         hdr['NAXIS1'] = sub_cube[2,1]-sub_cube[2,0]
         hdr['NAXIS2'] = sub_cube[1,1]-sub_cube[1,0]
@@ -515,7 +716,7 @@ def cutout_cube(filename,sub_cube, outname=None):
             sub_im = sub_cube
         else:
             print(f"We don't understand your idea your sub_cube = {len(sub_cube)} and the image {hdr['NAXIS']}")
-        print(sub_im)
+        #print(sub_im)
         data = Cube[0].data[sub_im[0,0]:sub_im[0,1],sub_im[1,0]:sub_im[1,1]]
 
         hdr['NAXIS1'] = sub_cube[1,1]-sub_cube[1,0]
@@ -657,6 +858,53 @@ fit_gaussian.__doc__ =f'''
  NOTE:
 '''
 
+
+
+def freq_to_vel(filename, outname=None, reverse=False):
+    C = 2.99792458e+8       # m/s
+    rest_HI = 1.4204057517667e+9  # Hz
+    if not os.path.exists(filename):
+        raise InputError(f'The file {filename} dooes not exist')
+    if outname is not None:
+        os.system(f'cp {filename} {outname}')
+        filename=outname    
+    
+    with fits.open(filename, mode='update') as cube:
+        hdr = cube[0].header
+        if 'RESTFREQ' in hdr:
+            restfreq = float(hdr['RESTFREQ'])
+        elif 'RESTFRQ' in hdr:
+            restfreq = float(hdr['RESTFRQ'])
+        else:
+            restfreq = rest_HI
+            # add rest frequency to FITS header
+        hdr['RESTFREQ'] = restfreq
+
+        # convert from frequency to radio velocity
+        if (hdr['NAXIS'] > 2) and (hdr['CTYPE3'] == 'FREQ') and not reverse:
+            hdr['CDELT3'] = -C * float(hdr['CDELT3']) / restfreq
+            hdr['CRVAL3'] = C * \
+                (1 - float(hdr['CRVAL3']) / restfreq)
+            # FITS standard for radio velocity as per
+            # https://fits.gsfc.nasa.gov/standard40/fits_standard40aa-le.pdf
+
+            hdr['CTYPE3'] = 'VRAD'
+            hdr['CUNIT3'] = 'm/s'
+           
+        # convert from radio velocity to frequency
+        elif (hdr['NAXIS'] > 2) and (hdr['CTYPE3'] == 'VRAD') and reverse:
+            hdr['CDELT3'] = -restfreq * float(hdr['CDELT3']) / C
+            hdr['CRVAL3'] = restfreq * \
+                (1 - float(hdr['crval3']) / C)
+            hdr['CTYPE3'] = 'FREQ'
+            hdr['CUNIT3'] = 'Hz'
+            # 3 lines below commented out because of issue 1209
+            #if 'cunit3' in hdr:
+            #    # delete cunit3 because we adopt the default units = Hz
+            #    del hdr['cunit3']
+        else:
+           raise InputError(f'We do not know how to process this header')
+
 def gaussian_function(axis,peak,center,sigma):
     return peak*np.exp(-(axis-center)**2/(2*sigma**2))
 
@@ -762,6 +1010,28 @@ isiterable.__doc__ =f'''
 def JB_to_Jy(array,header):
     beam_in_pixels = pixels_in_beam(header)
     return array/beam_in_pixels
+
+''' A simple function to determine extact where a given point (inp) is on the opposite axis'''
+def get_crossing_point(inp,x_in,y_in,get_x = False):
+    if len(y_in) != len(x_in):
+        raise InputError(f'The x and y input have to be the same length')
+    # if we have more then two point we first select or 2 points    
+    if len(x_in) > 2.:
+        if (get_x):
+            index = int(np.where(np.array(y_in,dtype=float) < inp)[0][-1])
+        else:
+            index = int(np.where(np.array(x_in,dtype=float) < inp)[0][-1])    
+        x = [x_in[index], x_in[index+1]]
+        y = [y_in[index], y_in[index+1]]
+    else:
+        x = copy.deepcopy(x_in)
+        y = copy.deepcopy(y_in)
+        
+
+    if get_x:
+        return x[0]+(x[1]-x[0])*((inp-y[0])/(y[1]-y[0]))
+    else:
+        return y[0]+(inp-x[0])*((y[1]-y[0])/(x[1]-x[0]))
 
 def load_tirific(def_input,Variables = None,array = False,\
         ensure_rings = False ,dict=False):
@@ -921,7 +1191,12 @@ rotateCube.__doc__=f'''
 
  NOTE:
 '''
-
+def vrad2vopt(vrad,ms=False):
+    c=299792.458
+    if ms:
+        vrad=vrad/1000.
+    vopt = c*((1./(1.-vrad/c))-1)
+    return vopt
 def regrid_array(oldarray, Out_Shape):
     oldshape = np.array(oldarray.shape)
     newshape = np.array(Out_Shape, dtype=float)
@@ -937,6 +1212,8 @@ def regrid_array(oldarray, Out_Shape):
     newarray = map_coordinates(oldarray, new_coordinates,order=1)
     if any([x != y for x,y in zip(newarray.shape,newshape)]):
         print("Something went wrong when regridding.")
+        print(f'This newarray {newarray.shape} and requested {newshape}')
+        exit()
     return newarray
 regrid_array.__doc__ =f'''
  NAME:
@@ -962,9 +1239,13 @@ regrid_array.__doc__ =f'''
 
  NOTE:
 '''
+#def resize_fits_image(fits_object, new_pixel_size):
 
-def setup_fig(size_factor=1.5):
-    Overview = plt.figure(2, figsize=(7, 7), dpi=300, facecolor='w', edgecolor='k')
+
+
+
+def setup_fig(size_factor=1.5,figsize= [7,7]):
+    Overview = plt.figure(2, figsize=figsize, dpi=300, facecolor='w', edgecolor='k')
 #stupid pythonic layout for grid spec, which means it is yx instead of xy like for normal human beings
     mpl_fm.fontManager.addfont( "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf")
     font_name = mpl_fm.FontProperties(fname= "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf").get_name()
@@ -1090,6 +1371,110 @@ update_disk_angles.__doc__ =f'''
 
  NOTE:
 '''
+
+def set_colormap(div = None, name='CustomColorMap', bg = 'White', \
+                    preset = None, colorrange=[0,256], unregister = False):
+    from  CosmosCanvas import velmap as vmap
+    if div is None:
+        div = (colorrange[1]-colorrange[0])/2.
+    if preset is not None:
+        name = preset
+    if unregister:
+        matplotlib.colormaps.unregister(name)
+        matplotlib.colormaps.unregister(f'{name}_r')
+
+    if preset == 'VF_Jayanne_Black':
+        c_max =50.
+        # This uses default LCH values in the function "create_cmap_doubleVelocity" in velmap.py
+        cmap=vmap.create_cmap_doubleVelocity(colorrange[0],colorrange[1],div=div,\
+                Cval_max=c_max,name=name)
+    if preset == 'VF_Jayanne_White':
+        #!!!!!!!!!!!!!! For white background
+        # Customize the colour map for a white background.  
+        # This example of the Double Complement Plus Luminosity Map 
+        # demonstrates how a user can adjust colours and luminosities. 
+        # Set the colours and their luminosities.  
+        # Width of the grey segment can also be changed.
+        # from  CosmosCanvas import velmap as vmap
+        # Set the saturation using Chroma values: 
+        Cval_max =50.
+        Cval_mid = 0.
+        Cval_4 = 40.
+        Cval_min = 35.
+        # Select Hues, using degrees on the colour wheel: 
+        Hval_L=190. # Left for lowest data value.  Turquoise.
+        Hval_R=10.  # Right for highest data value. Rose.
+        Hval_1=210. # cyans
+        Hval_2=230.
+        Hval_3=40.  # While hue 50 is the complement to 230 it looks too brown so the colour selected is offset.
+        Hval_4=30.
+        # Adjust luminosity: 
+        Lval_1=61. # This is the default value in velmap.py file.
+        Lval_2=55.  
+        Lval_mid=70.
+        Lval_3=55 
+        Lval_4=35
+        Lval_min=25.
+        # Adjust range for minor axis segment. (Default=0.05; Recommended max = 0.15)
+        width=0.05  # This is the segment centred on div that will be grey (chroma = 0)
+        cmap = vmap.create_cmap_mod_chromaVelocity(colorrange[0],colorrange[1],\
+            name=name, width=width, Cval_max=Cval_max, Cval_mid=Cval_mid,\
+            Cval_min=Cval_min, div=div,Hval_L=Hval_L,Hval_R=Hval_R,\
+            Hval_1=Hval_1,Hval_2=Hval_2,Hval_3=Hval_3,Hval_4=Hval_4, 
+            Lval_mid=Lval_mid,Lval_1=Lval_1,Lval_2=Lval_2,Lval_3=Lval_3\
+            , Lval_4=Lval_4,Lval_min=Lval_min,Cval_4=Cval_4 )
+    if preset == 'bgr':
+        res = 300
+        width = int(res/10.)
+        middle=int(res/2.)
+        bwr  = matplotlib.colormaps['bwr'](np.linspace(0,1,res))
+        coolwar= matplotlib.colormaps['coolwarm'](np.linspace(0,1,res))
+        bgr = copy.deepcopy(bwr)
+        for i in range(middle-width,middle+width+1):
+            factor = abs(i-middle)/width
+            secfactor= (1-factor)
+            bgr[i] = bwr[i]*factor+coolwar[i]*secfactor
+        bgr_cmap = ListedColormap(bgr)
+        matplotlib.colormaps.register(cmap=bgr_cmap,name=name)
+        #bgr_r = bgr[::-1]
+        matplotlib.colormaps.register(cmap=bgr_cmap.reversed(),name=f'{name}_r')
+
+
+
+
+    return name
+set_colormap.__doc__ =f'''
+ NAME:
+    set_color_map
+
+ PURPOSE:
+    Use the COSMOS package to define a specific color map
+
+ CATEGORY:
+   
+
+ INPUTS:
+    div = the divergent point for diverging color maps   
+    name = 'The name for calling the color map
+    bg = 'The intended back ground color
+    preset = ['VF_Jayanne_Black', 'VF_Jayanne_White']
+    
+
+ OPTIONAL INPUTS:
+
+
+ OUTPUTS:
+    Updated template
+
+ OPTIONAL OUTPUTS:
+
+ PROCEDURES CALLED:
+    Unspecified
+
+ NOTE:
+'''
+
+
 
 def tirific_template(filename = ''):
     if filename == '':
