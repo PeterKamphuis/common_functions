@@ -1,14 +1,21 @@
 # -*- coding: future_fstrings -*-
 
-import pkg_resources
+
+try:
+    from importlib.metadata import version
+except ImportError:
+    # Try backported to PY<37 `importlib_resources`.
+    # For Py<3.9 files is not available
+    from importlib_metadata import version 
+
 import os
 import subprocess
 
 def report_version():
     # Distutils standard  way to do version numbering
     try:
-        __version__ = pkg_resources.require("pk_common_functions")[0].version
-    except pkg_resources.DistributionNotFound:
+        __version__ = version("pk_common_functions")
+    except:
         __version__ = "dev"
     # perhaps we are in a github with tags; in that case return describe
     path = os.path.dirname(os.path.abspath(__file__))
@@ -25,7 +32,7 @@ def report_version():
         # perhaps we are in a github without tags? Cook something up if so
         try:
             result = subprocess.check_output(
-                'cd %s; git rev-parse --short HEAD' % path, shell=True, stderr=subprocess.STDOUT).rstrip().decode()
+                'cd %s; git rev-parse HEAD' % path, shell=True, stderr=subprocess.STDOUT).rstrip().decode()
         except subprocess.CalledProcessError:
             result = None
         if result != None and 'fatal' not in result:
@@ -52,3 +59,5 @@ __version__ = report_version()
 __branch__ = report_branch()
 
 #set_logger_values()
+
+
