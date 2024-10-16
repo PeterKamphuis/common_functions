@@ -26,6 +26,7 @@ add_bar_to_model
 add a bar to your favorite tirific model
 
 class defaults:
+
     bar_angle: List = field(default_factory=lambda: [37.]) #Bar angle in degrees
     bar_length: Optional[float] = None #Bar length in arcsec, default is the estimated ILR
     bar_brightness: List = field(default_factory=lambda: [None]) 
