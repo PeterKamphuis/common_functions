@@ -304,7 +304,11 @@ def copy_disk(Template_in, olddisk = 1, newdisk =-1):
     for key in reversed(copkeys):
         var_name = key.split('_')[0]
         Template.insert(last, f"{var_name}_{newdisk:d}", Template[key])
-    Template.insert(f"CFLUX_{newdisk-1:d}", f"CFLUX_{newdisk:d}",
+    if newdisk == 2:
+        Template.insert(f"CFLUX", f"CFLUX_{newdisk:d}",
+                    Template[f"CFLUX"])
+    else:    
+        Template.insert(f"CFLUX_{newdisk-1:d}", f"CFLUX_{newdisk:d}",
                     Template[f"CFLUX_{newdisk-1:d}"])
     return Template
 

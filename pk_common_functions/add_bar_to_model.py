@@ -107,7 +107,11 @@ def create_bar(Template, disk=1, length=None, thickness = 0.1, \
         bar_velocities = [bar_velocities]
     #copy the input disk
     Template_New = copy_disk(Template, disk)
+    #Template_New = copy.deepcopy(Template)
+
+
     #We offset by 37 deg.
+
     Template_New.insert(f"VSYS_{ndisk:d}", f"AZ1P_{ndisk:d}",
             f"{' '.join([str(e) for e in bar_angle])}")
     Template_New.insert(f"AZ1P_{ndisk:d}", f"AZ1W_{ndisk:d}"
@@ -121,6 +125,8 @@ def create_bar(Template, disk=1, length=None, thickness = 0.1, \
     Template_New.insert(f"VROT_{ndisk:d}", f"VRAD_{ndisk:d}"
         , f"{' '.join([str(e) for e in bar_velocities])}")
     Template_New[f"SBR_{ndisk:d}"] = f"{' '.join(str(e) for e in bar_brightness)}"
+   
+
     return Template_New
 
 
@@ -176,7 +182,7 @@ def main():
 add_bar_to_model input_def=<input tirific def file>''') 
 
         if cfg.output_def is None:
-            base = cfg.input_def.strip('.def')
+            base = os.path.splitext(cfg.input_def)[0]
             cfg.output_def =f'{base}_bar.def'
         # Read the input_file
         print(f'Reading {cfg.input_def}')
