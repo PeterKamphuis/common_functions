@@ -18,10 +18,10 @@ or
 import pk_common_functions.functions
 
 
-#Script functions
+# Script functions
 --------------------------------------
 
-add_bar_to_model
+*add_bar_to_model*
 
 add a bar to your favorite tirific model
 
