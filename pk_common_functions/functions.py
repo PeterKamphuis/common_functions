@@ -70,7 +70,6 @@ class Proper_Dictionary(OrderedDict):
 
         if not done:
             print("----!!!!!!!!We were unable to add your key!!!!!!---------")
-
 Proper_Dictionary.__doc__=f'''
 A class of ordered dictionary where keys can be inserted in at specified locations or at the end.
 '''
@@ -143,7 +142,6 @@ def calculate_colorrange(image):
     maximum = image_sort[-1*int(len(image_sort)*0.025)]
     return [minimum,maximum]
 
-
 ''' A function to ensure that the signs of 2 array are the same '''
 def check_signs(array1,array2):
     same = True
@@ -155,6 +153,7 @@ def check_signs(array1,array2):
     return same
 
         # a Function to convert the RA and DEC into hour angle (invert = False) and vice versa (default)
+
 def convertRADEC(RAin,DECin,invert=False, colon=False, verbose=False):
     if verbose:
         print(f'''CONVERTRADEC: Starting conversion from the following input.
@@ -221,7 +220,6 @@ def convertRADEC(RAin,DECin,invert=False, colon=False, verbose=False):
             RA =np.array(RA,dtype=float)
             DEC = np.array(DEC,dtype=float)
     return RA,DEC
-
 convertRADEC.__doc__ =f'''
  NAME:
     convertRADEC
@@ -256,8 +254,6 @@ convertRADEC.__doc__ =f'''
 
  NOTE:
 '''
-
-
 
 def copy_disk(Template_in, olddisk = 1, newdisk =-1):
     '''Routine to copy a disk in the tirific template file'''
@@ -311,8 +307,6 @@ def copy_disk(Template_in, olddisk = 1, newdisk =-1):
         Template.insert(f"CFLUX_{newdisk-1:d}", f"CFLUX_{newdisk:d}",
                     Template[f"CFLUX_{newdisk-1:d}"])
     return Template
-
-
 copy_disk.__doc__ = f'''
 NAME:
    copy_disk
@@ -340,7 +334,6 @@ PROCEDURES CALLED:
 NOTE:
 '''
 
-
 def beam_artist(ax,hdr,im_wcs,fcolor = 'none',ecolor='k'):
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
@@ -356,7 +349,6 @@ def beam_artist(ax,hdr,im_wcs,fcolor = 'none',ecolor='k'):
     beam = Ellipse(xy=localoc, width=widthb, height=heightb, angle=angleb, transform=ax.get_transform('world'),
            edgecolor=ecolor, lw=1, facecolor=fcolor, hatch='/////',zorder=15)
     return beam
-
 beam_artist.__doc__ =f'''
  NAME:
     beam_artist
@@ -383,6 +375,7 @@ beam_artist.__doc__ =f'''
 
  NOTE:
  '''
+
 def columndensity(levels,systemic = 100.,beam=None,\
         channel_width=None,column= False,arcsquare=False,solar_mass_input =False\
         ,solar_mass_output=False, verbose= False, linewidth= None):
@@ -445,7 +438,6 @@ def columndensity(levels,systemic = 100.,beam=None,\
     if not column and solar_mass_input:
         levels = levels*mHI*pc**2/solarmass
     return levels
-
 columndensity.__doc__ =f'''
  NAME:
     columndensity
@@ -543,8 +535,6 @@ Please use on of  {' ,'.join(possible_conversions)}
         # For converting the Main beam temperature (Yan's) spectra we get (See email 16-02-2024)
         # With the efficiencies as listed on  https://publicwiki.iram.es/Iram30mEfficiencies
         return [x*5.3 for x in conv_array]
- 
-
 
 # function for converting kpc to arcsec and vice versa
 def convertskyangle(angle, distance=-1., unit='arcsec', \
@@ -610,7 +600,6 @@ def convertskyangle(angle, distance=-1., unit='arcsec', \
     if len(kpc) == 1:
         kpc = float(kpc[0])
     return kpc
-
 convertskyangle.__doc__ =f'''
  NAME:
     convertskyangle
@@ -681,8 +670,7 @@ def create_profile(cube,mask=None):
     fu = f'{stri} {vu}'
 
     profile = {'axis': zaxis,'intensity': intensity, 'vel_unit': vu, 'flux_unit':fu }   
-    return profile
-        
+    return profile        
 
 def cutout_cube(filename,sub_cube, outname=None):
 
@@ -730,7 +718,6 @@ def cutout_cube(filename,sub_cube, outname=None):
     Cube.close()
     fits.writeto(outname,data,hdr,overwrite = True)
     return outname
-
 cutout_cube.__doc__ =f'''
  NAME:
     cutout_cube
@@ -760,6 +747,12 @@ cutout_cube.__doc__ =f'''
 
  NOTE:
 '''
+
+'''add the last element of a list until they are equal length'''
+def equal_length(in_list,match_list):
+    while len(in_list) < len(match_list):
+        in_list.append(in_list[-1])
+    return in_list
 
 def fit_gaussian(x,y, covariance = False,errors = None, \
     verbose= False):
@@ -860,8 +853,6 @@ fit_gaussian.__doc__ =f'''
 
  NOTE:
 '''
-
-
 
 def freq_to_vel(filename, outname=None, reverse=False):
     C = 2.99792458e+8       # m/s
@@ -969,8 +960,6 @@ get_model_DHI.__doc__ =f'''
 
  NOTE:
 '''
-
-
 
 def isiterable(variable):
     '''Check whether variable is iterable'''
@@ -1130,6 +1119,7 @@ load_tirific.__doc__ =f'''
  NOTE:
     This function has the added option of a dictionary compared to pyFAT
 '''
+
 def pixels_in_beam(hdr):
     beamarea=(np.pi*abs(hdr['BMAJ']*hdr['BMIN']))/(4.*np.log(2.))
     beam_in_pixels = beamarea/(abs(hdr['CDELT1'])*abs(hdr['CDELT2']))
@@ -1151,7 +1141,6 @@ def reduce_data_axes(data,axes= 3):
     while len(data.shape) > axes:
         data = data[0,:]
     return data
-
 
 def rotateImage(image, angle, pivot,order=1):
     padX = [int(image.shape[1] - pivot[0]), int(pivot[0])]
@@ -1194,12 +1183,14 @@ rotateCube.__doc__=f'''
 
  NOTE:
 '''
+
 def vrad2vopt(vrad,ms=False):
     c=299792.458
     if ms:
         vrad=vrad/1000.
     vopt = c*((1./(1.-vrad/c))-1)
     return vopt
+
 def regrid_array(oldarray, Out_Shape):
     oldshape = np.array(oldarray.shape)
     newshape = np.array(Out_Shape, dtype=float)
@@ -1244,9 +1235,6 @@ regrid_array.__doc__ =f'''
 '''
 #def resize_fits_image(fits_object, new_pixel_size):
 
-
-
-
 def setup_fig(size_factor=1.5,figsize= [7,7]):
     Overview = plt.figure(2, figsize=figsize, dpi=300, facecolor='w', edgecolor='k')
 #stupid pythonic layout for grid spec, which means it is yx instead of xy like for normal human beings
@@ -1284,7 +1272,6 @@ setup_fig.__doc__ =f'''
  NOTE:
 '''
 
-
 def square_plot(ax):
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
@@ -1306,8 +1293,7 @@ def square_plot(ax):
       
         diff = int(ymax-xmax)/2.
         ax.set_xlim(xmin-diff,xmax+diff)
-        xmin, xmax = ax.get_xlim()
-    
+        xmin, xmax = ax.get_xlim()   
 square_plot.__doc__ =f'''
  NAME:
     square_plot
@@ -1332,7 +1318,6 @@ square_plot.__doc__ =f'''
 
  NOTE:
 '''
-
 
 def update_disk_angles(Tirific_Template, verbose = False):
     extension = ['','_2']
@@ -1480,8 +1465,6 @@ set_colormap.__doc__ =f'''
 
  NOTE:
 '''
-
-
 
 def tirific_template(filename = ''):
     if filename == '':
