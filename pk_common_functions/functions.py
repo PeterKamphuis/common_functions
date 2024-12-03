@@ -378,7 +378,7 @@ beam_artist.__doc__ =f'''
 
 def columndensity(levels,systemic = 100.,beam=None,\
         channel_width=None,column= False,arcsquare=False,solar_mass_input =False\
-        ,solar_mass_output=False, verbose= False, linewidth= None):
+        ,solar_mass_output=False, verbose= False, linewidth= None,sensitivity=True ):
     if beam is None:
         if not arcsquare:
             print(f'COLUMNDENSITY: A beam is required to make the proper calculation''')
@@ -388,8 +388,10 @@ def columndensity(levels,systemic = 100.,beam=None,\
             channel_width = 1.
         else:
             print(f'COLUMNDENSITY: A channel width is required to make the proper calculation''')
-    if linewidth != None:
-        channel_width = linewidth/(np.sqrt(linewidth/channel_width))
+    if linewidth != None and sensitivity:
+        '''If we are calclating sensitivities over linewidth we are averaging over many channels
+        see https://library.nrao.edu/public/memos/gbt/GBT_289.pdf'''
+        channel_width = np.sqrt(linewidth*channel_width)
     if verbose:
         print(f'''COLUMNDENSITY: Starting conversion from the following input.
 {'':8s}Levels = {levels}
